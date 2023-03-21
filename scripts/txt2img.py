@@ -199,6 +199,18 @@ def parse_args():
         action='store_true',
         help="Use bfloat16",
     )
+    # ! Custom parameters
+    parser.add_argument(
+        "--output_intermediate_time_steps",
+        action='store_true',
+        help="Whether to output the intermediate time steps along the generated sample. Only works if n_samples is set to 1.",
+    )
+    parser.add_argument(
+        "--log_every_t",
+        type=int,
+        default=1,
+        help="After how many sampling steps to log an intermediate image.",
+    )
     opt = parser.parse_args()
     return opt
 
@@ -339,20 +351,31 @@ def main(opt):
                 for prompts in tqdm(data, desc="data"):
                     uc = None
                     if opt.scale != 1.0:
+                        # ? I think this is classifier free guidance
                         uc = model.get_learned_conditioning(batch_size * [""])
                     if isinstance(prompts, tuple):
                         prompts = list(prompts)
+                    # * embed prompts
                     c = model.get_learned_conditioning(prompts)
                     shape = [opt.C, opt.H // opt.f, opt.W // opt.f]
-                    samples, _ = sampler.sample(S=opt.steps,
-                                                     conditioning=c,
-                                                     batch_size=opt.n_samples,
-                                                     shape=shape,
-                                                     verbose=False,
-                                                     unconditional_guidance_scale=opt.scale,
-                                                     unconditional_conditioning=uc,
-                                                     eta=opt.ddim_eta,
-                                                     x_T=start_code)
+                    # ? how many intermediates are there?
+                    # * can be specified using the log_every_t parameter 
+                    samples, intermediates = sampler.sample(
+                        S=opt.steps,
+                        conditioning=c,
+                        batch_size=opt.n_samples,
+                        shape=shape,
+                        verbose=False,
+                        unconditional_guidance_scale=opt.scale,
+                        unconditional_conditioning=uc,
+                        eta=opt.ddim_eta,
+                        x_T=start_code,
+                        log_every_t=opt.log_every_t,
+                    )
+
+                    if opt.output_intermediate_time_steps and opt.n_samples == 1:
+                        intermediate_images = intermediates['x_inter']
+                        samples = torch.cat(intermediate_images, dim=0)
 
                     x_samples = model.decode_first_stage(samples)
                     x_samples = torch.clamp((x_samples + 1.0) / 2.0, min=0.0, max=1.0)
