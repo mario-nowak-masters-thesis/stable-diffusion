@@ -18,7 +18,7 @@ from imwatermark import WatermarkEncoder
 
 from scripts.txt2img import put_watermark
 from ldm.util import instantiate_from_config
-from ldm.models.diffusion.ddim import DDIMSampler
+from ldm.models.diffusion.ddim_inversion import DDIMInversionSampler
 
 
 def chunk(it, size):
@@ -85,16 +85,10 @@ def main():
     )
 
     parser.add_argument(
-        "--ddim_steps",
+        "--ddim_inversion_steps",
         type=int,
         default=50,
-        help="number of ddim sampling steps",
-    )
-
-    parser.add_argument(
-        "--fixed_code",
-        action='store_true',
-        help="if enabled, uses the same starting code across all samples ",
+        help="number of ddim inversion steps",
     )
 
     parser.add_argument(
@@ -103,6 +97,7 @@ def main():
         default=0.0,
         help="ddim eta (eta=0.0 corresponds to deterministic sampling",
     )
+    # ! this is most likely useless for this script
     parser.add_argument(
         "--n_iter",
         type=int,
@@ -123,6 +118,7 @@ def main():
         help="downsampling factor, most often 8 or 16",
     )
 
+    # ! this is most likely useless for this script
     parser.add_argument(
         "--n_samples",
         type=int,
@@ -144,7 +140,7 @@ def main():
         help="unconditional guidance scale: eps = eps(x, empty) + scale * (eps(x, cond) - eps(x, empty))",
     )
 
-    # TODO: check if this is needed for me
+    # TODO: check if this is needed for this script
     parser.add_argument(
         "--strength",
         type=float,
@@ -152,11 +148,6 @@ def main():
         help="strength for noising/unnoising. 1.0 corresponds to full destruction of information in init image",
     )
 
-    parser.add_argument(
-        "--from-file",
-        type=str,
-        help="if specified, load prompts from this file",
-    )
     parser.add_argument(
         "--config",
         type=str,
@@ -191,92 +182,67 @@ def main():
     device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     model = model.to(device)
 
-    sampler = DDIMSampler(model)
+    ddim_inversion_sampler = DDIMInversionSampler(model)
 
     os.makedirs(opt.outdir, exist_ok=True)
-    outpath = opt.outdir
+    output_path = opt.outdir
 
     print("Creating invisible watermark encoder (see https://github.com/ShieldMnt/invisible-watermark)...")
-    wm = "SDV2"
-    wm_encoder = WatermarkEncoder()
-    wm_encoder.set_watermark('bytes', wm.encode('utf-8'))
+    watermark = "SDV2"
+    watermark_encoder = WatermarkEncoder()
+    watermark_encoder.set_watermark('bytes', watermark.encode('utf-8'))
 
     batch_size = opt.n_samples
     n_rows = opt.n_rows if opt.n_rows > 0 else batch_size
-    if not opt.from_file:
-        prompt = opt.prompt
-        assert prompt is not None
-        data = [batch_size * [prompt]]
 
-    else:
-        print(f"reading prompts from {opt.from_file}")
-        with open(opt.from_file, "r") as f:
-            data = f.read().splitlines()
-            data = list(chunk(data, batch_size))
+    prompt = opt.prompt
+    assert prompt is not None
+    data = [batch_size * [prompt]]
 
-    sample_path = os.path.join(outpath, "samples")
+    sample_path = os.path.join(output_path, "samples")
     os.makedirs(sample_path, exist_ok=True)
     base_count = len(os.listdir(sample_path))
-    grid_count = len(os.listdir(outpath)) - 1
+    grid_count = len(os.listdir(output_path)) - 1
 
-    assert os.path.isfile(opt.init_img)
+    assert os.path.isfile(opt.image_to_invert)
 
-    init_image = load_img(opt.init_img).to(device)
-    init_image = repeat(init_image, '1 ... -> b ...', b=batch_size)
+    image_to_invert = load_img(opt.image_to_invert).to(device)
+    image_to_invert = repeat(image_to_invert, '1 ... -> b ...', b=batch_size)
 
-    # move to latent space
-    init_latent = model.get_first_stage_encoding(model.encode_first_stage(init_image))
+    # * move image we would like to invert to latent space
+    image_to_invert_in_latent_space = model.get_first_stage_encoding(model.encode_first_stage(image_to_invert))
 
-    sampler.make_schedule(ddim_num_steps=opt.ddim_steps, ddim_eta=opt.ddim_eta, verbose=False)
-
-    assert 0. <= opt.strength <= 1., 'can only work with strength in [0.0, 1.0]'
-    t_enc = int(opt.strength * opt.ddim_steps)
-    print(f"target t_enc is {t_enc} steps")
+    ddim_inversion_sampler.make_schedule(ddim_num_steps=opt.ddim_inversion_steps, ddim_eta=opt.ddim_eta, verbose=False)
 
     precision_scope = autocast if opt.precision == "autocast" else nullcontext
-    with torch.no_grad():
-        with precision_scope("cuda"):
-            with model.ema_scope():
-                all_samples = list()
-                for n in trange(opt.n_iter, desc="Sampling"):
-                    for prompts in tqdm(data, desc="data"):
-                        uc = None
-                        if opt.scale != 1.0:
-                            uc = model.get_learned_conditioning(batch_size * [""])
-                        if isinstance(prompts, tuple):
-                            prompts = list(prompts)
-                        c = model.get_learned_conditioning(prompts)
+    with torch.no_grad(), precision_scope("cuda"), model.ema_scope():
+        all_samples = []
+        uc = None
+        if opt.scale != 1.0:
+            uc = model.get_learned_conditioning(batch_size * [""])
 
-                        # encode (scaled latent)
-                        z_enc = sampler.stochastic_encode(init_latent, torch.tensor([t_enc] * batch_size).to(device))
-                        # decode it
-                        samples = sampler.decode(z_enc, c, t_enc, unconditional_guidance_scale=opt.scale,
-                                                 unconditional_conditioning=uc, )
+        conditioning = model.get_learned_conditioning(prompt)
 
-                        x_samples = model.decode_first_stage(samples)
-                        x_samples = torch.clamp((x_samples + 1.0) / 2.0, min=0.0, max=1.0)
+        # decode it
+        samples = ddim_inversion_sampler.invert_latent_image(
+            image_to_invert_in_latent_space,
+            conditioning,
+            unconditional_guidance_scale=opt.scale,
+            unconditional_conditioning=uc,
+        )
 
-                        for x_sample in x_samples:
-                            x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
-                            img = Image.fromarray(x_sample.astype(np.uint8))
-                            img = put_watermark(img, wm_encoder)
-                            img.save(os.path.join(sample_path, f"{base_count:05}.png"))
-                            base_count += 1
-                        all_samples.append(x_samples)
+        x_samples = model.decode_first_stage(samples)
+        x_samples = torch.clamp((x_samples + 1.0) / 2.0, min=0.0, max=1.0)
 
-                # additionally, save as grid
-                grid = torch.stack(all_samples, 0)
-                grid = rearrange(grid, 'n b c h w -> (n b) c h w')
-                grid = make_grid(grid, nrow=n_rows)
+        for x_sample in x_samples:
+            x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
+            img = Image.fromarray(x_sample.astype(np.uint8))
+            img = put_watermark(img, watermark_encoder)
+            img.save(os.path.join(sample_path, f"{base_count:05}.png"))
+            base_count += 1
+        all_samples.append(x_samples)
 
-                # to image
-                grid = 255. * rearrange(grid, 'c h w -> h w c').cpu().numpy()
-                grid = Image.fromarray(grid.astype(np.uint8))
-                grid = put_watermark(grid, wm_encoder)
-                grid.save(os.path.join(outpath, f'grid-{grid_count:04}.png'))
-                grid_count += 1
-
-    print(f"Your samples are ready and waiting for you here: \n{outpath} \nEnjoy.")
+    print(f"Your samples are ready and waiting for you here: \n{output_path} \nEnjoy.")
 
 
 if __name__ == "__main__":

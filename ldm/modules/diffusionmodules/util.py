@@ -44,8 +44,11 @@ def make_beta_schedule(schedule, n_timestep, linear_start=1e-4, linear_end=2e-2,
 
 
 def make_ddim_timesteps(ddim_discr_method, num_ddim_timesteps, num_ddpm_timesteps, verbose=True):
+    """
+    Computes a list of the timesteps used for DDIM sampling.
+    """
     if ddim_discr_method == 'uniform':
-        c = num_ddpm_timesteps // num_ddim_timesteps
+        c = num_ddpm_timesteps // num_ddim_timesteps # TODO: rename c to step size
         ddim_timesteps = np.asarray(list(range(0, num_ddpm_timesteps, c)))
     elif ddim_discr_method == 'quad':
         ddim_timesteps = ((np.linspace(0, np.sqrt(num_ddpm_timesteps * .8), num_ddim_timesteps)) ** 2).astype(int)
@@ -72,6 +75,19 @@ def make_ddim_sampling_parameters(alphacums, ddim_timesteps, eta, verbose=True):
         print(f'For the chosen value of eta, which is {eta}, '
               f'this results in the following sigma_t schedule for ddim sampler {sigmas}')
     return sigmas, alphas, alphas_prev
+
+
+def make_ddim_inversion_sampling_parameters(alpha_cum_prod, ddim_timesteps, verbose=True):
+    """
+    Returns the alphas and previous alphas required for DDIM sampling.
+    """
+    # select alphas for computing the variance schedule
+    alphas = alpha_cum_prod[ddim_timesteps]
+    alphas_next = np.asarray(alpha_cum_prod[ddim_timesteps[1:]].tolist() + [alpha_cum_prod[-1]])
+    if verbose:
+        print(f'Selected alphas for ddim inversion sampler: a_t: {alphas}; a_(t+1): {alphas_next}')
+
+    return alphas, alphas_next
 
 
 def betas_for_alpha_bar(num_diffusion_timesteps, alpha_bar, max_beta=0.999):
