@@ -48,8 +48,8 @@ def make_ddim_timesteps(ddim_discr_method, num_ddim_timesteps, num_ddpm_timestep
     Computes a list of the timesteps used for DDIM sampling.
     """
     if ddim_discr_method == 'uniform':
-        c = num_ddpm_timesteps // num_ddim_timesteps # TODO: rename c to step size
-        ddim_timesteps = np.asarray(list(range(0, num_ddpm_timesteps, c)))
+        time_step_size = num_ddpm_timesteps // num_ddim_timesteps
+        ddim_timesteps = np.asarray(list(range(0, num_ddpm_timesteps, time_step_size)))
     elif ddim_discr_method == 'quad':
         ddim_timesteps = ((np.linspace(0, np.sqrt(num_ddpm_timesteps * .8), num_ddim_timesteps)) ** 2).astype(int)
     else:

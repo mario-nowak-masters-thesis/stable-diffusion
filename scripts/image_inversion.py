@@ -223,15 +223,14 @@ def main():
 
         conditioning = model.get_learned_conditioning(prompt)
 
-        # decode it
-        samples = ddim_inversion_sampler.invert_latent_image(
+        inverted_latent_image = ddim_inversion_sampler.invert_latent_image(
             image_to_invert_in_latent_space,
             conditioning,
             unconditional_guidance_scale=opt.scale,
             unconditional_conditioning=uc,
         )
 
-        x_samples = model.decode_first_stage(samples)
+        x_samples = model.decode_first_stage(inverted_latent_image)
         x_samples = torch.clamp((x_samples + 1.0) / 2.0, min=0.0, max=1.0)
 
         for x_sample in x_samples:
