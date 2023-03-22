@@ -222,13 +222,13 @@ def main():
     init_image = load_img(opt.init_img).to(device)
     init_image = repeat(init_image, '1 ... -> b ...', b=batch_size)
 
-    # move to latent space
+    # * move into latent space
     init_latent = model.get_first_stage_encoding(model.encode_first_stage(init_image))
 
     sampler.make_schedule(ddim_num_steps=opt.ddim_steps, ddim_eta=opt.ddim_eta, verbose=False)
 
     assert 0. <= opt.strength <= 1., 'can only work with strength in [0.0, 1.0]'
-    t_enc = int(opt.strength * opt.ddim_steps)
+    t_enc = int(opt.strength * opt.ddim_steps) # ? what is this?
     print(f"target t_enc is {t_enc} steps")
 
     precision_scope = autocast if opt.precision == "autocast" else nullcontext
@@ -251,6 +251,7 @@ def main():
                         samples = sampler.decode(z_enc, c, t_enc, unconditional_guidance_scale=opt.scale,
                                                  unconditional_conditioning=uc, )
 
+                        # * move out of latent space
                         x_samples = model.decode_first_stage(samples)
                         x_samples = torch.clamp((x_samples + 1.0) / 2.0, min=0.0, max=1.0)
 

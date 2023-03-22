@@ -531,7 +531,7 @@ class Encoder(nn.Module):
                 hs.append(self.down[i_level].downsample(hs[-1]))
 
         # middle
-        h = hs[-1]
+        h = hs[-1] # * only use the last downsampled h
         h = self.mid.block_1(h, temb)
         h = self.mid.attn_1(h)
         h = self.mid.block_2(h, temb)
@@ -539,7 +539,7 @@ class Encoder(nn.Module):
         # end
         h = self.norm_out(h)
         h = nonlinearity(h)
-        h = self.conv_out(h)
+        h = self.conv_out(h) # * this here reduced the dimensions from 512 (= 4 (= ch_mul) * 128 (= ch)) to 8 (= 2 * z_channels)
         return h
 
 

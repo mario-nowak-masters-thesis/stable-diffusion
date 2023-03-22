@@ -774,11 +774,11 @@ class UNetModel(nn.Module):
             emb = emb + self.label_emb(y)
 
         h = x.type(self.dtype)
-        for module in self.input_blocks:
+        for module in self.input_blocks: # * down-sampling
             h = module(h, emb, context)
             hs.append(h)
-        h = self.middle_block(h, emb, context)
-        for module in self.output_blocks:
+        h = self.middle_block(h, emb, context) # * operation done in the middle of the UNet
+        for module in self.output_blocks: # * up-scaling
             h = th.cat([h, hs.pop()], dim=1)
             h = module(h, emb, context)
         h = h.type(x.dtype)
