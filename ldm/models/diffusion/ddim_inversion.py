@@ -54,7 +54,7 @@ class DDIMInversionSampler(object):
             noise = x[channel_index][None, None, :, :]
             while True:
                 if random_shift:
-                    roll_amount = randrange(noise.shape[2] // 2)  # ? what is roll amount?
+                    roll_amount = randrange(noise.shape[2] // 2)
                 else:
                     roll_amount = 1
                 regularization_loss += (noise * torch.roll(noise, shifts=roll_amount, dims=2)).mean() ** 2
@@ -66,9 +66,9 @@ class DDIMInversionSampler(object):
 
     @torch.enable_grad()
     def kl_divergence(self, x: torch.Tensor) -> torch.Tensor:
-        _mu = x.mean()
-        _var = x.var()
-        return _var + _mu**2 - 1 - torch.log(_var + 1e-7)
+        mean = x.mean()
+        variance = x.var()
+        return variance + mean**2 - 1 - torch.log(variance + 1e-7)
 
     @torch.no_grad()
     def inversion_step(
@@ -86,7 +86,6 @@ class DDIMInversionSampler(object):
         b, *_, device = *x.shape, x.device
 
         # compute the noise in the image 
-        # TODO: use no_grad here
         if unconditional_conditioning is None or unconditional_guidance_scale == 1.0:
             model_output = self.model.apply_model(x, t, c)
         else:
@@ -121,12 +120,12 @@ class DDIMInversionSampler(object):
             e_t = score_corrector.modify_score(self.model, e_t, x, t, c, **corrector_kwargs)
 
         # TODO: implement regularization of noise prediction here
-        lambda_ac = 20
-        lambda_kl = 20
+        lambda_ac = 10
+        lambda_kl = 30
         num_reg_steps = 5
-        num_ac_rolls = 5
+        num_ac_rolls = 1
 
-        for _outer in range(num_reg_steps):
+        for _regularization_step in range(num_reg_steps):
             if lambda_ac > 0:
                 for _inner in range(num_ac_rolls):
                     _var = torch.autograd.Variable(e_t.detach().clone(), requires_grad=True)
@@ -186,7 +185,7 @@ class DDIMInversionSampler(object):
         total_steps = timesteps.shape[0]
         print(f"Running DDIM inversion with {total_steps} timesteps")
 
-        iterator = tqdm(timesteps, desc="Decoding image", total=total_steps)  # TODO: change the description
+        iterator = tqdm(timesteps, desc="Inverting image", total=total_steps)
         x_inverted = x_latent
         for i, step in enumerate(iterator):
             index = total_steps - i - 1

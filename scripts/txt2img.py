@@ -6,7 +6,7 @@ from omegaconf import OmegaConf
 from PIL import Image
 from tqdm import tqdm, trange
 from itertools import islice
-from einops import rearrange
+from einops import rearrange, repeat
 from torchvision.utils import make_grid
 from pytorch_lightning import seed_everything
 from torch import autocast
@@ -49,6 +49,18 @@ def load_model_from_config(config, ckpt, device=torch.device("cuda"), verbose=Fa
         raise ValueError(f"Incorrect device name. Received: {device}")
     model.eval()
     return model
+
+
+def load_img(path):
+    image = Image.open(path).convert("RGB")
+    w, h = image.size
+    print(f"loaded input image of size ({w}, {h}) from {path}")
+    w, h = map(lambda x: x - x % 64, (w, h))  # resize to integer multiple of 64
+    image = image.resize((w, h), resample=Image.LANCZOS)
+    image = np.array(image).astype(np.float32) / 255.0
+    image = image[None].transpose(0, 3, 1, 2)
+    image = torch.from_numpy(image)
+    return 2. * image - 1.
 
 
 def parse_args():
@@ -211,6 +223,11 @@ def parse_args():
         default=1,
         help="After how many sampling steps to log an intermediate image.",
     )
+    parser.add_argument(
+        "--initial_noise",
+        type=str,
+        help="The path to an initial noise image"
+    )
     opt = parser.parse_args()
     return opt
 
@@ -268,6 +285,12 @@ def main(opt):
     start_code = None
     if opt.fixed_code:
         start_code = torch.randn([opt.n_samples, opt.C, opt.H // opt.f, opt.W // opt.f], device=device)
+
+    if opt.initial_noise:
+        assert os.path.isfile(opt.initial_noise)
+        initial_noise = load_img(opt.initial_noise).to(device)
+        initial_noise = repeat(initial_noise, '1 ... -> b ...', b=batch_size)
+        start_code = model.get_first_stage_encoding(model.encode_first_stage(initial_noise))
 
     if opt.torchscript or opt.ipex:
         transformer = model.cond_stage_model.model

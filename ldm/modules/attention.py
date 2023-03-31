@@ -294,7 +294,7 @@ class SpatialTransformer(nn.Module):
         self.in_channels = in_channels
         inner_dim = n_heads * d_head
         self.norm = Normalize(in_channels)
-        if not use_linear:
+        if not use_linear: # ! v2 uses linear
             self.proj_in = nn.Conv2d(in_channels,
                                      inner_dim,
                                      kernel_size=1,
