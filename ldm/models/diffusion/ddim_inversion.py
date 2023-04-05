@@ -1,5 +1,3 @@
-"""SAMPLING ONLY."""  # TODO: change comment
-
 from random import randrange
 import torch
 import numpy as np
@@ -89,7 +87,6 @@ class DDIMInversionSampler(object):
         if unconditional_conditioning is None or unconditional_guidance_scale == 1.0:
             model_output = self.model.apply_model(x, t, c)
         else:
-            # ? I think this is classifier free guidance
             x_in = torch.cat([x] * 2)
             t_in = torch.cat([t] * 2)
             if isinstance(c, dict):

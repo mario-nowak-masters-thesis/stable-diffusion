@@ -6,10 +6,8 @@ import torch
 import numpy as np
 from omegaconf import OmegaConf
 from PIL import Image
-from tqdm import tqdm, trange
 from itertools import islice
 from einops import rearrange, repeat
-from torchvision.utils import make_grid
 from torch import autocast
 from contextlib import nullcontext
 from pytorch_lightning import seed_everything
