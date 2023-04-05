@@ -119,11 +119,10 @@ class DDIMInversionSampler(object):
             assert self.model.parameterization == "eps", "not implemented"
             e_t = score_corrector.modify_score(self.model, e_t, x, t, c, **corrector_kwargs)
 
-        # TODO: implement regularization of noise prediction here
-        lambda_ac = 10
-        lambda_kl = 30
+        lambda_ac = 20
+        lambda_kl = 20
         num_reg_steps = 5
-        num_ac_rolls = 1
+        num_ac_rolls = 5
 
         for _regularization_step in range(num_reg_steps):
             if lambda_ac > 0:
@@ -185,10 +184,10 @@ class DDIMInversionSampler(object):
         total_steps = timesteps.shape[0]
         print(f"Running DDIM inversion with {total_steps} timesteps")
 
-        iterator = tqdm(timesteps, desc="Inverting image", total=total_steps)
+        iterator = tqdm(timesteps[1:-1], desc="Inverting image", total=total_steps)
         x_inverted = x_latent
         for i, step in enumerate(iterator):
-            index = total_steps - i - 1
+            index = i + 1
             ts = torch.full((x_latent.shape[0],), step, device=x_latent.device, dtype=torch.long)
             x_inverted, _ = self.inversion_step(
                 x_inverted,

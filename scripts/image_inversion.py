@@ -201,8 +201,9 @@ def main():
 
     sample_path = os.path.join(output_path, "samples")
     os.makedirs(sample_path, exist_ok=True)
+    serialized_latent_path = os.path.join(output_path, "serialized_latents")
+    os.makedirs(serialized_latent_path, exist_ok=True)
     base_count = len(os.listdir(sample_path))
-    grid_count = len(os.listdir(output_path)) - 1
 
     assert os.path.isfile(opt.image_to_invert)
 
@@ -234,6 +235,7 @@ def main():
         x_samples = torch.clamp((x_samples + 1.0) / 2.0, min=0.0, max=1.0)
 
         for x_sample in x_samples:
+            torch.save(inverted_latent_image[0].cpu(), os.path.join(serialized_latent_path, f"{base_count:05}.pt"))
             x_sample = 255. * rearrange(x_sample.cpu().numpy(), 'c h w -> h w c')
             img = Image.fromarray(x_sample.astype(np.uint8))
             img = put_watermark(img, watermark_encoder)

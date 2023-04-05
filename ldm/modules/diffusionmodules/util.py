@@ -82,8 +82,8 @@ def make_ddim_inversion_sampling_parameters(alpha_cum_prod, ddim_timesteps, verb
     Returns the alphas and previous alphas required for DDIM sampling.
     """
     # select alphas for computing the variance schedule
-    alphas = alpha_cum_prod[ddim_timesteps]
-    alphas_next = np.asarray(alpha_cum_prod[ddim_timesteps[1:]].tolist() + [alpha_cum_prod[-1]])
+    alphas = alpha_cum_prod[ddim_timesteps - 1]
+    alphas_next = np.asarray(alpha_cum_prod[(ddim_timesteps  - 1)[1:]].tolist() + [alpha_cum_prod[-1]])
     if verbose:
         print(f'Selected alphas for ddim inversion sampler: a_t: {alphas}; a_(t+1): {alphas_next}')
 
