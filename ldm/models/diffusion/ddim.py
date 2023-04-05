@@ -22,12 +22,16 @@ class DDIMSampler(object):
         setattr(self, name, attr)
 
     def make_schedule(self, ddim_num_steps, ddim_discretize="uniform", ddim_eta=0., verbose=True):
+        """
+        Computes and saves all the parameters required to perform DDIM and DDPM sampling.
+        """
         self.ddim_timesteps = make_ddim_timesteps(ddim_discr_method=ddim_discretize, num_ddim_timesteps=ddim_num_steps,
                                                   num_ddpm_timesteps=self.ddpm_num_timesteps,verbose=verbose)
         alphas_cumprod = self.model.alphas_cumprod
         assert alphas_cumprod.shape[0] == self.ddpm_num_timesteps, 'alphas have to be defined for each timestep'
         to_torch = lambda x: x.clone().detach().to(torch.float32).to(self.model.device)
 
+        # * save DDPM sampling parameters
         self.register_buffer('betas', to_torch(self.model.betas))
         self.register_buffer('alphas_cumprod', to_torch(alphas_cumprod))
         self.register_buffer('alphas_cumprod_prev', to_torch(self.model.alphas_cumprod_prev))
@@ -161,6 +165,10 @@ class DDIMSampler(object):
             timesteps = self.ddim_timesteps[:subset_end]
 
         intermediates = {'x_inter': [img], 'pred_x0': [img]}
+        # if we are logging intermediate image, make sure to log the initial noise
+        if log_every_t > 0:
+            intermediates['x_inter'].append(img)
+
         time_range = reversed(range(0,timesteps)) if ddim_use_original_steps else np.flip(timesteps)
         total_steps = timesteps if ddim_use_original_steps else timesteps.shape[0]
         print(f"Running DDIM Sampling with {total_steps} timesteps")
@@ -336,9 +344,16 @@ class DDIMSampler(object):
                 extract_into_tensor(sqrt_one_minus_alphas_cumprod, t, x0.shape) * noise)
 
     @torch.no_grad()
-    def decode(self, x_latent, cond, t_start, unconditional_guidance_scale=1.0, unconditional_conditioning=None,
-               use_original_steps=False, callback=None):
-
+    def decode(
+        self,
+        x_latent,
+        cond,
+        t_start,
+        unconditional_guidance_scale=1.0,
+        unconditional_conditioning=None,
+        use_original_steps=False,
+        callback=None
+    ):
         timesteps = np.arange(self.ddpm_num_timesteps) if use_original_steps else self.ddim_timesteps
         timesteps = timesteps[:t_start]
 

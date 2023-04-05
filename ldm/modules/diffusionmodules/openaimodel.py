@@ -588,7 +588,7 @@ class UNetModel(nn.Module):
                                 num_heads=num_heads,
                                 num_head_channels=dim_head,
                                 use_new_attention_order=use_new_attention_order,
-                            ) if not use_spatial_transformer else SpatialTransformer(
+                            ) if not use_spatial_transformer else SpatialTransformer( # ! used in v2 inference
                                 ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim,
                                 disable_self_attn=disabled_sa, use_linear=use_linear_in_transformer,
                                 use_checkpoint=use_checkpoint
@@ -774,12 +774,12 @@ class UNetModel(nn.Module):
             emb = emb + self.label_emb(y)
 
         h = x.type(self.dtype)
-        for module in self.input_blocks:
+        for module in self.input_blocks: # * down-sampling
             h = module(h, emb, context)
             hs.append(h)
-        h = self.middle_block(h, emb, context)
-        for module in self.output_blocks:
-            h = th.cat([h, hs.pop()], dim=1)
+        h = self.middle_block(h, emb, context) # * operation done in the middle of the UNet
+        for module in self.output_blocks: # * up-scaling
+            h = th.cat([h, hs.pop()], dim=1) # ! this is how skip connection are made
             h = module(h, emb, context)
         h = h.type(x.dtype)
         if self.predict_codebook_ids:

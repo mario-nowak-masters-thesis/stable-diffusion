@@ -49,8 +49,8 @@ model:
           resolution: 256
           in_channels: 3
           out_ch: 3
-          ch: 128
-          ch_mult:
+          ch: 128 # * convolution channels
+          ch_mult: # * during the encoding, with downsampling of the images, ch gets multiplied with this
           - 1
           - 2
           - 4
